@@ -1,0 +1,124 @@
+clc; clear; close all;
+
+NUM_TAPS  = 51;
+FC_HZ     = 15e6;       
+
+FS_IN     = 120e6;       
+M         =  3;        
+L         = 12;          
+
+FS_DECIM  = FS_IN / M;               
+FS_INTERP = FS_DECIM * L;            
+
+BETA      = 8.6;        
+fc_decim_norm  = FC_HZ / (FS_IN / 2);       % 15/60 = 0.25
+h_decim = fir1(NUM_TAPS-1, fc_decim_norm, kaiser(NUM_TAPS, BETA));
+
+fc_interp_norm = FC_HZ / (FS_INTERP / 2);   % 15/240 = 0.0625
+h_interp_proto = fir1(NUM_TAPS-1, fc_interp_norm, kaiser(NUM_TAPS, BETA));
+
+h_interp       = h_interp_proto * L;
+
+Q_SCALE_16 = 2^15;   
+Q_SCALE_18 = 2^15; 
+
+h_decim_q  = int32(max(-32768,   min(32767,   round(h_decim  * Q_SCALE_16))));
+h_interp_q = int32(max(-131072,  min(131071,  round(h_interp * Q_SCALE_18))));
+
+if ~exist('../coefficients', 'dir')
+    mkdir('../coefficients');
+end
+
+save_coe('../coefficients/fir_decimator.coe', h_decim_q, ...
+    sprintf('Decimator: 51-tap LPF, fc=%gMHz, fs=%gMHz, Kaiser beta=%.1f', ...
+            FC_HZ/1e6, FS_IN/1e6, BETA));
+
+save_coe('../coefficients/fir_interpolator.coe', h_interp_q, ...
+    sprintf('Interpolator: 51-tap LPF, fc=%gMHz, fs_out=%gMHz, scaled x%d', ...
+            FC_HZ/1e6, FS_INTERP/1e6, L));
+
+fprintf('\n  DECIMATOR (÷%d: %g MHz → %g MHz)\n', M, FS_IN/1e6, FS_DECIM/1e6);
+fprintf('    Taps              : %d\n',            NUM_TAPS);
+fprintf('    Cutoff freq       : %g MHz\n',         FC_HZ/1e6);
+fprintf('    Normalised fc     : %.4f × Nyquist\n', fc_decim_norm);
+fprintf('    DC gain           : %.6f  (ideal = 1.0)\n', sum(h_decim));
+fprintf('    Coeff range       : [%d, %d]  (Q1.15)\n', min(h_decim_q), max(h_decim_q));
+fprintf('    Saved to          : ../coefficients/fir_decimator.coe\n');
+
+fprintf('\n  INTERPOLATOR (×%d: %g MHz → %g MHz)\n', L, FS_DECIM/1e6, FS_INTERP/1e6);
+fprintf('    Taps              : %d\n',             NUM_TAPS);
+fprintf('    Cutoff freq       : %g MHz\n',          FC_HZ/1e6);
+fprintf('    Normalised fc     : %.6f × Nyquist\n',  fc_interp_norm);
+fprintf('    Proto DC gain     : %.6f  (ideal = 1.0)\n', sum(h_interp_proto));
+fprintf('    Scaled DC gain    : %.6f  (× L = %d)\n',    sum(h_interp), L);
+fprintf('    Coeff range       : [%d, %d]  (Q3.15, 18-bit)\n', ...
+        min(h_interp_q), max(h_interp_q));
+fprintf('    Saved to          : ../coefficients/fir_interpolator.coe\n');
+fprintf('=================================================================\n');
+NFFT = 65536;
+
+figure('Name','FIR Filter Frequency Responses','NumberTitle','off','Color','w','Position',[100 100 1200 500]);
+subplot(1,2,1);
+[H_d, f_d] = freqz(h_decim, 1, NFFT, FS_IN);
+plot(f_d/1e6, 20*log10(abs(H_d) + 1e-12), 'b', 'LineWidth', 1.3);
+hold on;
+xline(FC_HZ/1e6, 'r--', 'LineWidth', 1.2, 'Label', 'f_c = 15 MHz','LabelVerticalAlignment','bottom');
+yline(-3,  'Color',[1 0.6 0], 'LineStyle',':', 'LineWidth', 0.9, 'Label', '-3 dB');
+yline(-60, 'Color',[0.5 0.5 0.5], 'LineStyle',':', 'LineWidth', 0.9, 'Label', '-60 dB');
+hold off;
+xlabel('Frequency (MHz)');  ylabel('Magnitude (dB)');
+title(sprintf('Decimator Filter\nfs_{in} = %g MHz,  fc = %g MHz', FS_IN/1e6, FC_HZ/1e6));
+xlim([0, FS_IN/2e6]);  ylim([-90, 5]);
+grid on;
+subplot(1,2,2);
+[H_i, f_i] = freqz(h_interp, 1, NFFT, FS_INTERP);
+plot(f_i/1e6, 20*log10(abs(H_i) + 1e-12), 'Color',[0.13 0.55 0.13], 'LineWidth', 1.3);
+hold on;
+xline(FC_HZ/1e6, 'r--', 'LineWidth', 1.2, 'Label', 'f_c = 15 MHz', ...
+      'LabelVerticalAlignment','bottom');
+yline(-3,  'Color',[1 0.6 0], 'LineStyle',':', 'LineWidth', 0.9, 'Label', '-3 dB');
+yline(-60, 'Color',[0.5 0.5 0.5], 'LineStyle',':', 'LineWidth', 0.9, 'Label', '-60 dB');
+hold off;
+xlabel('Frequency (MHz)');  ylabel('Magnitude (dB)');
+title(sprintf('Interpolator Prototype Filter (×L scaled)\nfs_{out} = %g MHz,  fc = %g MHz',FS_INTERP/1e6, FC_HZ/1e6));
+xlim([0, FS_INTERP/2e6]);  ylim([-90, 5 + 20*log10(L)]);
+grid on;
+
+sgtitle('FIR Filter Frequency Responses  —  Kaiser Window (\beta = 8.6)', 'FontWeight','bold','FontSize',12);
+
+figure('Name','Filter Coefficients','NumberTitle','off','Color','w','Position',[100 620 1200 380]);
+
+subplot(1,2,1);
+stem(0:NUM_TAPS-1, double(h_decim_q), 'b', 'filled', 'MarkerSize', 4);
+xlabel('Tap index');  ylabel('Q1.15 integer value');
+title('Decimator Coefficients  (Q1.15, 16-bit)');  grid on;
+
+subplot(1,2,2);
+stem(0:NUM_TAPS-1, double(h_interp_q), 'Color',[0.13 0.55 0.13], ...
+     'filled', 'MarkerSize', 4);
+xlabel('Tap index');  ylabel('Q3.15 integer value');
+title('Interpolator Coefficients  (Q3.15, 18-bit, scaled ×12)');  grid on;
+
+sgtitle('Quantised Filter Coefficients', 'FontWeight','bold','FontSize',12);
+
+fprintf('\nPlots displayed in MATLAB figure windows.\n');
+function save_coe(filepath, h_q, comment)
+    fid = fopen(filepath, 'w');
+    if fid == -1
+        error('Cannot open %s for writing.', filepath);
+    end
+    fprintf(fid, '; %s\n', comment);
+    fprintf(fid, '; 51-tap Kaiser-windowed FIR lowpass filter\n');
+    fprintf(fid, '; Generated by generate_coeffs.m\n');
+    fprintf(fid, 'radix=10;\n');
+    fprintf(fid, 'coefdata=\n');
+    N = numel(h_q);
+    for k = 1 : N
+        if k < N
+            fprintf(fid, '%d,\n', h_q(k));
+        else
+            fprintf(fid, '%d;\n', h_q(k));
+        end
+    end
+    fclose(fid);
+end
