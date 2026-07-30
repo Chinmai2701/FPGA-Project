@@ -1,0 +1,8 @@
+PROBLEM STATEMENT
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Design and verify a Verilog/VHDL module that operates at clock frequency of 120 MHz, and performs decimation by 3 and then interpolation by 12 on a 16-bit(Q1.15 fixed point) incoming signal.
+Use Xilinx’s FIR Compiler IP to realize the decimator and interpolator. For decimator and interpolator, realize a 51-tap filter with cutoff frequency of 15 MHz. Based on the filter coefficients chosen, the fixed point format of the output of the IP may change, therefore by slicing or scaling, ensure that the fixed point format of the signal is Q1.15 at all stages.
+In MATLAB/Python, generate a sinewave of frequency 1MHz and amplitude 0.999, with a sampling frequency of 120 MHz. Convert it to Q1.15 fixed point representation and save it to a text file. In the test bench, use this text file as your input signal. And at specified points in the diagram, store the signal into separate text files according to the sampling frequency at that corresponding stage.
+Note: Ensure the samples are not repeating in the case of Decimated signal. And take note of the parallel output in the Interpolated signal.
+Read these text files in MATLAB/Python and plot the FFTs of the input and the stored signals.
+Note: Make sure to use the appropriate X-axis according to the sampling frequency of the signal when plotting the FFT.
